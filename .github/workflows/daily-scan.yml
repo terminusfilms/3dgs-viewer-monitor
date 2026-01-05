@@ -1,0 +1,61 @@
+name: Daily 3DGS Viewer Scan
+
+on:
+  # Run daily at 8am EST (13:00 UTC)
+  schedule:
+    - cron: '0 13 * * *'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run scanner
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python scan.py
+
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Commit findings
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add findings/
+          git diff --staged --quiet || git commit -m "Add daily scan results for ${{ steps.date.outputs.date }}"
+          git push
+
+      - name: Create issue from report
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "3DGS Viewer Monitor - ${{ steps.date.outputs.date }}"
+          content-filepath: ./latest_report.md
+          labels: |
+            daily-scan
+            automated
